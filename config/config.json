@@ -11,32 +11,14 @@
     },
     "connections": [
         {
-            "type": "webdav",
-            "label": "WebDav"
-        },
-        {
-            "type": "ftp",
-            "label": "FTP"
-        },
-        {
-            "type": "sftp",
-            "label": "SFTP"
-        },
-        {
-            "type": "git",
-            "label": "GIT"
-        },
-        {
             "type": "s3",
-            "label": "S3"
-        },
-        {
-            "type": "dropbox",
-            "label": "Dropbox"
-        },
-        {
-            "type": "gdrive",
-            "label": "Drive"
+            "label": "S3",
+            "auto_login": true,
+            "access_key_id": "REPLACE_ME_WITH_ACCESS_KEY",
+            "secret_access_key": "REPLACE_ME_WITH_SECRET_KEY",
+            "endpoint": "",
+            "region": "us-east-1",
+            "path": "/"
         }
     ]
 }
