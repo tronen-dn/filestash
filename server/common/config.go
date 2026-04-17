@@ -283,6 +283,52 @@ func (this *Configuration) Save() {
 	}
 }
 
+// sensitiveConnectionFields lists keys that must NEVER be returned by the
+// public `/api/config` endpoint. These fields may be set by an admin inside
+// `config.json` so that a pre-configured connection (e.g. `auto_login`,
+// `preconfigured`) can authenticate automatically on the server side, but
+// the raw secrets themselves must stay server-side.
+var sensitiveConnectionFields = map[string]bool{
+	"access_key_id":     true,
+	"secret_access_key": true,
+	"session_token":     true,
+	"password":          true,
+	"encryption_key":    true,
+	"role_arn":          true,
+}
+
+// publicConnections returns a copy of the configured connections safe to
+// expose to unauthenticated clients. Sensitive fields are stripped out.
+func (this *Configuration) publicConnections() []map[string]any {
+	out := make([]map[string]any, 0, len(this.Conn))
+	for _, c := range this.Conn {
+		safe := make(map[string]any, len(c))
+		for k, v := range c {
+			if sensitiveConnectionFields[k] {
+				continue
+			}
+			safe[k] = v
+		}
+		out = append(out, safe)
+	}
+	return out
+}
+
+// FindConnectionByLabel looks up a configured connection by its `label`.
+// This is used to merge server-side credentials into an auth request that
+// only references a pre-configured connection by label.
+func (this *Configuration) FindConnectionByLabel(label string) map[string]any {
+	if label == "" {
+		return nil
+	}
+	for _, c := range this.Conn {
+		if l, ok := c["label"].(string); ok && l == label {
+			return c
+		}
+	}
+	return nil
+}
+
 func (this *Configuration) Export() interface{} {
 	return struct {
 		Editor                  string            `json:"editor"`
@@ -315,7 +361,7 @@ func (this *Configuration) Export() interface{} {
 		DisplayHidden:           this.Get("general.display_hidden").Bool(),
 		Name:                    this.Get("general.name").String(),
 		UploadButton:            this.Get("general.upload_button").Bool(),
-		Connections:             this.Conn,
+		Connections:             this.publicConnections(),
 		SharedLinkDefaultAccess: this.Get("features.share.default_access").String(),
 		SharedLinkRedirect:      this.Get("features.share.redirect").String(),
 		Logout:                  this.Get("general.logout").String(),
