@@ -56,10 +56,15 @@ func init() {
 }
 
 var (
-	APPNAME                           string = "Filestash"
-	BASE                              string
-	BUILD_REF                         string
-	BUILD_DATE                        string
+	APPNAME    string = "Filestash"
+	BASE       string
+	BUILD_REF  string
+	BUILD_DATE string
+	// EDITOR_MAX_SIZE_MB is the max size (in MB) of a text file that can be
+	// opened in the built-in editor. Files larger than this fall back to the
+	// downloader view. Override at compile time with:
+	//   go build -ldflags "-X github.com/mickael-kerjean/filestash/server/common.EDITOR_MAX_SIZE_MB=500"
+	EDITOR_MAX_SIZE_MB                string = "100"
 	LICENSE                           string = "agpl"
 	SECRET_KEY                        string
 	SECRET_KEY_DERIVATE_FOR_PROOF     string
