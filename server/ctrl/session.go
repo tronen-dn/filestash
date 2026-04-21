@@ -53,16 +53,22 @@ func SessionAuthenticate(ctx *App, res http.ResponseWriter, req *http.Request) {
 	ctx.Body["timestamp"] = time.Now().Format(time.RFC3339)
 
 	// If the request references a pre-configured connection by label
-	// (e.g. an `auto_login` entry in config.json), merge the server-side
-	// stored credentials/settings into the request body. Admin-configured
-	// values always win, so the client cannot override them.
+	// (i.e. an `auto_login: true` entry in config.json), merge the
+	// server-side stored credentials/settings into the request body.
+	// The merge is gated on the target connection explicitly opting in
+	// via `auto_login: true`, so an attacker cannot inject credentials
+	// for an arbitrary named connection just by guessing its label.
+	// Admin-configured values always win, so the client cannot override
+	// them.
 	if label, _ := ctx.Body["_preconfigured_label"].(string); label != "" {
 		if conn := Config.FindConnectionByLabel(label); conn != nil {
-			for k, v := range conn {
-				if k == "label" || k == "auto_login" || k == "preconfigured" {
-					continue
+			if autoLogin, _ := conn["auto_login"].(bool); autoLogin {
+				for k, v := range conn {
+					if k == "label" || k == "auto_login" {
+						continue
+					}
+					ctx.Body[k] = v
 				}
-				ctx.Body[k] = v
 			}
 		}
 		delete(ctx.Body, "_preconfigured_label")
