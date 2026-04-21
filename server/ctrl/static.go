@@ -153,7 +153,13 @@ func ServeFile(chroot string) func(*App, http.ResponseWriter, *http.Request) {
 		if f := applyPatch(filePath); f != nil {
 			head.Set("Content-Type", GetMimeType(filepath.Ext(filePath)))
 			res.WriteHeader(http.StatusOK)
-			res.Write(f.Bytes())
+			res.Write(applyBuildTimeReplacements(filePath, f.Bytes()))
+			return
+		}
+		if b := maybeServeWithBuildTimeReplacements(filePath); b != nil {
+			head.Set("Content-Type", GetMimeType(filepath.Ext(filePath)))
+			res.WriteHeader(http.StatusOK)
+			res.Write(b)
 			return
 		}
 
@@ -431,7 +437,7 @@ func ServeBundle() func(*App, http.ResponseWriter, *http.Request) {
 					}
 					file.Close()
 				}
-				code, err := json.Marshal(f.String())
+				code, err := json.Marshal(string(applyBuildTimeReplacements(curPath, f.Bytes())))
 				if err != nil {
 					Log.Warning("static::bundle msg=marshal_failed path=%s err=%s", path, err.Error())
 					continue
@@ -490,6 +496,46 @@ func ServeBundle() func(*App, http.ResponseWriter, *http.Request) {
 	}
 }
 
+// editorMaxSizeRegex matches the literal `const MAX_EDIT_SIZE = <N>*1024*1024;`
+// declaration in public/assets/pages/viewerpage/application_editor.js so it can
+// be rewritten with the value of EDITOR_MAX_SIZE_MB supplied at compile time.
+var editorMaxSizeRegex = regexp.MustCompile(`const MAX_EDIT_SIZE = \d+\*1024\*1024;`)
+
+// applyBuildTimeReplacements rewrites portions of served static assets using
+// values configured at compile time (e.g. via go build -ldflags "-X ...").
+// It is a no-op for files that do not need rewriting.
+func applyBuildTimeReplacements(filePath string, content []byte) []byte {
+	if strings.HasSuffix(filePath, "/assets/pages/viewerpage/application_editor.js") ||
+		strings.HasSuffix(filePath, "assets/pages/viewerpage/application_editor.js") {
+		n, err := strconv.Atoi(EDITOR_MAX_SIZE_MB)
+		if err != nil || n <= 0 {
+			n = 100
+		}
+		replacement := []byte(fmt.Sprintf("const MAX_EDIT_SIZE = %d*1024*1024;", n))
+		content = editorMaxSizeRegex.ReplaceAll(content, replacement)
+	}
+	return content
+}
+
+// maybeServeWithBuildTimeReplacements reads a file from the embedded assets
+// and applies applyBuildTimeReplacements when the file is known to need them.
+// Returns nil when the file should be served through the default fast path.
+func maybeServeWithBuildTimeReplacements(filePath string) []byte {
+	if !strings.HasSuffix(filePath, "/pages/viewerpage/application_editor.js") {
+		return nil
+	}
+	file, err := WWWPublic.Open(filePath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	b, err := io.ReadAll(file)
+	if err != nil {
+		return nil
+	}
+	return applyBuildTimeReplacements(filePath, b)
+}
+
 func applyPatch(filePath string) (file *bytes.Buffer) {
 	var (
 		outputBuffer bytes.Buffer
@@ -540,7 +586,7 @@ func applyPatch(filePath string) (file *bytes.Buffer) {
 }
 
 func signature() string {
-	text := BUILD_REF
+	text := BUILD_REF + "|editor_max_mb=" + EDITOR_MAX_SIZE_MB
 	patches := Hooks.Get.StaticPatch()
 	for i := 0; i < len(patches); i++ {
 		text += string(patches[i])
