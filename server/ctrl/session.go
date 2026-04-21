@@ -51,6 +51,23 @@ func SessionGet(ctx *App, res http.ResponseWriter, req *http.Request) {
 
 func SessionAuthenticate(ctx *App, res http.ResponseWriter, req *http.Request) {
 	ctx.Body["timestamp"] = time.Now().Format(time.RFC3339)
+
+	// If the request references a pre-configured connection by label
+	// (e.g. an `auto_login` entry in config.json), merge the server-side
+	// stored credentials/settings into the request body. Admin-configured
+	// values always win, so the client cannot override them.
+	if label, _ := ctx.Body["_preconfigured_label"].(string); label != "" {
+		if conn := Config.FindConnectionByLabel(label); conn != nil {
+			for k, v := range conn {
+				if k == "label" || k == "auto_login" || k == "preconfigured" {
+					continue
+				}
+				ctx.Body[k] = v
+			}
+		}
+		delete(ctx.Body, "_preconfigured_label")
+	}
+
 	session := model.MapStringInterfaceToMapStringString(ctx.Body)
 	session["path"] = EnforceDirectory(session["path"])
 

@@ -167,6 +167,17 @@ export default async function(render) {
             rxjs.map((conns) => conns[0]),
             rxjs.filter(({ middleware }) => middleware),
         ),
+        // 6.d auto submit when the admin has flagged a connection as auto_login
+        //     in config.json; credentials are resolved server-side by label.
+        connections$.pipe(
+            rxjs.first(),
+            rxjs.map((conns) => conns.find((c) => c && c.auto_login === true)),
+            rxjs.filter((conn) => !!conn),
+            rxjs.map((conn) => ({
+                type: conn.type,
+                _preconfigured_label: conn.label,
+            })),
+        ),
     ).pipe(
         rxjs.mergeMap((formData) => { // CASE 1: authentication middleware flow
             if (!("middleware" in formData)) return rxjs.of(formData);
