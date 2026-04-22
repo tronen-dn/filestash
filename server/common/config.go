@@ -283,31 +283,29 @@ func (this *Configuration) Save() {
 	}
 }
 
-// sensitiveConnectionFields lists keys that must NEVER be returned by the
-// public `/api/config` endpoint. These fields may be set by an admin inside
-// `config.json` so that a pre-configured connection (e.g. `auto_login`,
-// `preconfigured`) can authenticate automatically on the server side, but
-// the raw secrets themselves must stay server-side.
-var sensitiveConnectionFields = map[string]bool{
-	"access_key_id":     true,
-	"secret_access_key": true,
-	"session_token":     true,
-	"password":          true,
-	"encryption_key":    true,
-	"role_arn":          true,
+// publicConnectionFields is an allowlist of keys that are safe to return from
+// the public `/api/config` endpoint. Any other field (including admin-only
+// credentials like `access_key_id`, `secret_access_key`, `session_token`,
+// `password`, `encryption_key`, `role_arn`, or any future auth field added
+// by a new backend) is stripped so secrets cannot leak to unauthenticated
+// clients. This is an allowlist rather than a denylist so that adding a new
+// backend with a new secret field name does not silently expose it.
+var publicConnectionFields = map[string]bool{
+	"type":       true,
+	"label":      true,
+	"auto_login": true,
 }
 
 // publicConnections returns a copy of the configured connections safe to
-// expose to unauthenticated clients. Sensitive fields are stripped out.
+// expose to unauthenticated clients. Only allowlisted fields are included.
 func (this *Configuration) publicConnections() []map[string]any {
 	out := make([]map[string]any, 0, len(this.Conn))
 	for _, c := range this.Conn {
-		safe := make(map[string]any, len(c))
+		safe := make(map[string]any, len(publicConnectionFields))
 		for k, v := range c {
-			if sensitiveConnectionFields[k] {
-				continue
+			if publicConnectionFields[k] {
+				safe[k] = v
 			}
-			safe[k] = v
 		}
 		out = append(out, safe)
 	}

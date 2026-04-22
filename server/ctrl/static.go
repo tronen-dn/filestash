@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 
 	. "github.com/mickael-kerjean/filestash"
@@ -501,18 +502,31 @@ func ServeBundle() func(*App, http.ResponseWriter, *http.Request) {
 // be rewritten with the value of EDITOR_MAX_SIZE_MB supplied at compile time.
 var editorMaxSizeRegex = regexp.MustCompile(`const MAX_EDIT_SIZE = \d+\*1024\*1024;`)
 
+// editorMaxSizeReplacement is computed once from the compile-time
+// EDITOR_MAX_SIZE_MB ldflag. If the value is missing or invalid it falls
+// back to 100 MB and logs a warning on first use so the misconfiguration
+// is visible (the logger is not yet initialized at package-init time).
+var (
+	editorMaxSizeOnce        sync.Once
+	editorMaxSizeReplacement []byte
+)
+
+func initEditorMaxSize() {
+	n, err := strconv.Atoi(EDITOR_MAX_SIZE_MB)
+	if err != nil || n <= 0 {
+		Log.Warning("common::config EDITOR_MAX_SIZE_MB=%q is not a positive integer, falling back to 100", EDITOR_MAX_SIZE_MB)
+		n = 100
+	}
+	editorMaxSizeReplacement = []byte(fmt.Sprintf("const MAX_EDIT_SIZE = %d*1024*1024;", n))
+}
+
 // applyBuildTimeReplacements rewrites portions of served static assets using
 // values configured at compile time (e.g. via go build -ldflags "-X ...").
 // It is a no-op for files that do not need rewriting.
 func applyBuildTimeReplacements(filePath string, content []byte) []byte {
-	if strings.HasSuffix(filePath, "/assets/pages/viewerpage/application_editor.js") ||
-		strings.HasSuffix(filePath, "assets/pages/viewerpage/application_editor.js") {
-		n, err := strconv.Atoi(EDITOR_MAX_SIZE_MB)
-		if err != nil || n <= 0 {
-			n = 100
-		}
-		replacement := []byte(fmt.Sprintf("const MAX_EDIT_SIZE = %d*1024*1024;", n))
-		content = editorMaxSizeRegex.ReplaceAll(content, replacement)
+	if strings.HasSuffix(filePath, "assets/pages/viewerpage/application_editor.js") {
+		editorMaxSizeOnce.Do(initEditorMaxSize)
+		content = editorMaxSizeRegex.ReplaceAll(content, editorMaxSizeReplacement)
 	}
 	return content
 }
