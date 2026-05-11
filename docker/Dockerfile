@@ -6,7 +6,7 @@ ARG GIT_BRANCH=master
 RUN git clone --depth 1 --single-branch --branch ${GIT_BRANCH} ${GIT_REPO}
 
 # STEP2: BUILD BACKEND
-FROM golang:1.24-trixie AS builder_backend
+FROM golang:1.26-trixie AS builder_backend
 WORKDIR /home/filestash/
 COPY --from=builder_prepare /home/filestash/ .
 RUN apt-get update > /dev/null && \
@@ -19,7 +19,8 @@ RUN apt-get update > /dev/null && \
 
 # STEP3: BUILD PROD IMAGE
 FROM debian:stable-slim
-MAINTAINER mickael@kerjean.me
+ARG FORK_SHA=unknown
+LABEL org.opencontainers.image.revision="${FORK_SHA}"
 WORKDIR /app/
 COPY --from=builder_backend /home/filestash/dist/ .
 RUN apt-get update > /dev/null && \

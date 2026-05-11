@@ -1,0 +1,70 @@
+# Plaintext-HTTP S3 round-trip fixture (Test 3, base).
+#
+# Three services on one user-defined bridge network:
+#   - minio       : the S3 server under test as a dependency of Filestash.
+#                   Pinned by tag (RELEASE.2024-10-13T13-34-11Z) — a
+#                   point-release with a stable API surface. Bumping is
+#                   mechanical; just pick a newer RELEASE.* tag.
+#   - mc-init     : one-shot. Waits for minio to be reachable, creates
+#                   `test-bucket`, uploads hello.txt containing the canary
+#                   string the assertions check for. Exits 0 on success;
+#                   compose's `depends_on: service_completed_successfully`
+#                   gates Filestash on this.
+#   - filestash   : the SUT. The locally-built `filestash-test:local`
+#                   image (DO NOT rebuild here — `docker/test/run.sh`
+#                   builds it once up front). Config is mounted read-only
+#                   from `config/minio.json`.
+#
+# The overlay `compose.tls.yml` adds an nginx sidecar terminating TLS and
+# repoints Filestash at `https://nginx-tls:9000` without otherwise
+# touching this file.
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    command: ["server", "/data", "--address", ":9000"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      # MinIO ships its own readiness endpoint. Anything 2xx/3xx means
+      # the S3 API is up.
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [s3net]
+
+  mc-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set local http://minio:9000 minioadmin minioadmin
+        mc mb --ignore-existing local/test-bucket
+        printf 'filestash-upgrade-canary' | mc pipe local/test-bucket/hello.txt
+        # Verify the canary uploaded correctly. If this echo doesn't
+        # match, the bucket fixture is broken and Filestash assertions
+        # downstream will misattribute the failure.
+        got=$$(mc cat local/test-bucket/hello.txt)
+        test "$$got" = "filestash-upgrade-canary"
+    networks: [s3net]
+
+  filestash:
+    image: filestash-test:local
+    depends_on:
+      mc-init:
+        condition: service_completed_successfully
+    ports:
+      - "18334:8334"
+    volumes:
+      - ./config/minio.json:/app/data/state/config/config.json:ro
+    networks: [s3net]
+
+networks:
+  s3net:
+    driver: bridge

@@ -3,6 +3,7 @@ node_modules/
 dist/
 *_generated.go
 test/
+!/docker/test/
 *.a
 *.o
 *.bin

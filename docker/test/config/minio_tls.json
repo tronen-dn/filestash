@@ -1,0 +1,14 @@
+{
+  "connections": [
+    {
+      "type": "s3",
+      "label": "S3",
+      "auto_login": true,
+      "access_key_id": "minioadmin",
+      "secret_access_key": "minioadmin",
+      "region": "us-east-1",
+      "endpoint": "https://nginx-tls:9000",
+      "path": "/test-bucket"
+    }
+  ]
+}
