@@ -1,0 +1,46 @@
+# TLS-overlay for Test 3. Layer on top of compose.yml:
+#
+#   docker compose -f compose.yml -f compose.tls.yml up -d
+#
+# Adds an `nginx-tls` sidecar that listens on :9000 with the self-signed
+# cert from `certs/nginx-tls.crt` and proxies to `http://minio:9000`.
+# Filestash is repointed at `https://nginx-tls:9000` via a different
+# config file and gets the CA cert installed at boot via a thin shim
+# entrypoint (see certs/filestash-tls-entrypoint.sh for the why).
+
+services:
+  nginx-tls:
+    image: nginx:1.27-alpine
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./certs/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/nginx-tls.crt:/etc/nginx/certs/nginx-tls.crt:ro
+      - ./certs/nginx-tls.key:/etc/nginx/certs/nginx-tls.key:ro
+    # service_started is not enough — Filestash dials nginx immediately on
+    # first API call, and "container running" doesn't mean "TLS listener
+    # bound". Health-probe TLS port 9000 from inside the container.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --no-check-certificate -O - https://127.0.0.1:9000/minio/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 2s
+    networks: [s3net]
+
+  filestash:
+    # Override the upstream config mount with the TLS-flavoured one
+    # (https://nginx-tls:9000) and wedge in a root entrypoint that
+    # installs the fixture CA before launching the binary.
+    user: "0:0"
+    depends_on:
+      mc-init:
+        condition: service_completed_successfully
+      nginx-tls:
+        condition: service_healthy
+    volumes:
+      - ./config/minio_tls.json:/app/data/state/config/config.json:ro
+      - ./certs/nginx-tls.crt:/fixture/nginx-tls.crt:ro
+      - ./certs/filestash-tls-entrypoint.sh:/fixture/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/fixture/entrypoint.sh"]
