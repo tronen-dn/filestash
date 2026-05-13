@@ -1,5 +1,43 @@
+# Build context allowlist negative: everything below is excluded from the
+# Docker build context. Keep this conservative — only data Filestash needs
+# at build time should reach the daemon.
+
+# VCS / agent / editor state
 .git
+.gitignore
+.gitattributes
 .claude
+.worktrees
+.vscode
+.idea
+*.swp
+
+# Local-only deploy tooling and runtime artifacts (kept out of the image)
+deploy
+docs
+
+# Build outputs from any prior local builds
 dist
-**/node_modules
+data
+state
 *.log
+
+# Frontend dependency caches (npm pulls them inside the builder stage if needed)
+node_modules
+public/node_modules
+.parcel-cache
+
+# Test scratch
+docker/test/.scratch
+docker/test/tmp
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local secrets — must never end up in any image
+.env
+.env.*
+!.env.example
+*.pem
+*.key

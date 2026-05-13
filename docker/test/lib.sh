@@ -19,7 +19,7 @@ build_image() {
     --build-arg "FORK_SHA=${sha}" \
     -t "$IMAGE_TAG" \
     -f "$(repo_root)/docker/Dockerfile" \
-    "$(repo_root)/docker" >&2
+    "$(repo_root)" >&2
 }
 
 # Start a detached filestash container with the given config file mounted.

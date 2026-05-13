@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Test 02 — Config contract: auto_login redirect + path round-trip.
+# Test 02 — Config contract: auto_login redirect + sanitized public config.
 #
 # Boots the image with auto_login.json mounted. Asserts:
 #   (a) GET /login (no redirect follow) returns a 3xx redirect
 #   (b) Location header is non-empty (path captured + logged; not pinned)
-#   (c) The JSON body of the public config endpoint contains the literal
-#       string "/test-bucket" — proves the configured path round-trips
-#       through the config parser unchanged.
+#   (c) /api/config exposes a sanitized public view of the configured
+#       connections — exactly {type, label, auto_login} per entry — and
+#       MUST NOT leak credentials (access_key_id, secret_access_key),
+#       network identity (region, endpoint), or the bucket path. This
+#       contract is enforced by the fork's publicConnections() allowlist
+#       in server/common/config.go (commit 7ba71081). End-to-end
+#       round-trip of the configured path is covered by Test 03
+#       (03_s3_roundtrip) against MinIO, so we don't re-check it here.
 #
 # Deviations from UPGRADE_TEST_PLAN.md §4 / Test 2 (Filestash v0.6 surface,
 # probed against the current fork build):
@@ -18,12 +23,8 @@
 #     forces admin bootstrap before honoring auto_login. The plan's
 #     "Location matches /files/.*" assertion therefore cannot pass without
 #     also seeding an admin password. We capture and log the Location but
-#     do NOT pin its path; the round-trip check below is the real contract.
-#   * The plan says /api/session carries the configured path. It doesn't:
-#     /api/session returns 401 for an unauthenticated client. The path
-#     surfaces in /api/config (unauthenticated, by design — that's the
-#     endpoint the SPA reads to populate its connection picker). We use
-#     /api/config for the literal-string assertion.
+#     do NOT pin its path; the sanitized-shape check below is the real
+#     contract for this test.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -122,14 +123,34 @@ if ! jq -e . "$CFG_BODY" >/dev/null 2>&1; then
   die "/api/config body is not JSON"
 fi
 
-# Exact-string check: walk every string in the JSON tree and require at
-# least one that equals "/test-bucket" exactly. Substring matching would
-# pass on "/test-bucket-renamed" or on the value appearing in an error
-# message, which would silently let a broken contract through.
-if ! jq -e '[.. | strings] | any(. == "/test-bucket")' "$CFG_BODY" >/dev/null; then
-  log "/api/config body has no JSON string equal to '/test-bucket':"
+# Positive shape check: the sanitized public view exposes exactly one
+# connection, with label/type/auto_login matching auto_login.json. The
+# allowlist lives in publicConnections() in server/common/config.go.
+if ! jq -e '
+  (.result.connections | length == 1)
+  and (.result.connections[0].label == "S3")
+  and (.result.connections[0].type  == "s3")
+  and (.result.connections[0].auto_login == true)
+' "$CFG_BODY" >/dev/null; then
+  log "/api/config body (unexpected connections shape):"
   cat "$CFG_BODY" >&2 || true
-  die "/api/config response missing exact path '/test-bucket'"
+  die "/api/config connections shape does not match {label:S3,type:s3,auto_login:true}"
+fi
+
+# Negative leak check: the sanitized connection object must not carry any
+# of the upstream fields that publicConnections() strips. Identify the
+# first leaked key by name so failures are self-describing.
+leaked=$(jq -r '
+  .result.connections[0]
+  | [keys[] | select(. == "path" or . == "access_key_id"
+                       or . == "secret_access_key" or . == "region"
+                       or . == "endpoint")]
+  | .[0] // ""
+' "$CFG_BODY")
+if [[ -n "$leaked" ]]; then
+  log "/api/config body (leaked sensitive key '$leaked'):"
+  cat "$CFG_BODY" >&2 || true
+  die "/api/config leaked sensitive key '$leaked' in public connection object"
 fi
 
 # Reuse the missing-libs guard from lib.sh on the post-test log buffer —

@@ -11,9 +11,16 @@ import (
 )
 
 func main() {
-	cmd, b := exec.Command("git", "rev-parse", "HEAD"), new(strings.Builder)
-	cmd.Stdout = b
-	cmd.Run()
+	// Prefer BUILD_REF from the environment so Docker / CI builds without a
+	// .git directory can still bake in a commit SHA. Fall back to git for
+	// developer builds run from a checkout.
+	ref := strings.TrimSpace(os.Getenv("BUILD_REF"))
+	if ref == "" {
+		cmd, b := exec.Command("git", "rev-parse", "HEAD"), new(strings.Builder)
+		cmd.Stdout = b
+		cmd.Run()
+		ref = strings.TrimSpace(b.String())
+	}
 
 	f, err := os.OpenFile("../common/constants_generated.go", os.O_CREATE|os.O_WRONLY, os.ModePerm)
 	if err != nil {
@@ -28,6 +35,6 @@ func init() {
     BUILD_REF = "%s"
     BUILD_DATE = "%s"
 }
-	`, strings.TrimSpace(b.String()), time.Now().Format("20060102"))))
+	`, ref, time.Now().Format("20060102"))))
 	f.Close()
 }
