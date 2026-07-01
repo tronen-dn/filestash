@@ -17,6 +17,8 @@ package-lock.json
 .tern-port
 .tern-project.js
 *_test.go
+# keep the Entra auth plugin's security tests under version control
+!server/plugin/plg_authenticate_entra/oidc_test.go
 cover.*
 www
 .gitignore

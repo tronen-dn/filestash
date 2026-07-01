@@ -319,7 +319,7 @@ func SessionAuthMiddleware(ctx *App, res http.ResponseWriter, req *http.Request)
 	// Step2: End of the authentication process. Could come from:
 	// - target of a html form. eg: ldap, mysql, ...
 	// - identity provider redirection uri. eg: oauth2, openid, ...
-	pluginCallback, err := plugin.Callback(formData, idpParams, res)
+	pluginCallback, err := plugin.Callback(formData, idpParams, req, res)
 	if err == ErrAuthenticationFailed {
 		Log.Warning("failed authentication - %s", err.Error())
 		http.Redirect(
@@ -473,12 +473,17 @@ func SessionAuthMiddleware(ctx *App, res http.ResponseWriter, req *http.Request)
 		MaxAge: -1,
 		Path:   COOKIE_PATH,
 	}, req))
-	http.SetCookie(res, applyCookieRules(&http.Cookie{
+	// SameSite=Lax (not the Strict default from applyCookieRules) so the session
+	// cookie survives the top-level redirect back from the identity provider. A
+	// Strict cookie is withheld on the cross-site-initiated navigation returning
+	// from the IdP, which would leave the just-authenticated session unreadable
+	// and bounce the user into an infinite login redirect loop.
+	http.SetCookie(res, applyCookieSameSiteRule(applyCookieRules(&http.Cookie{
 		Name:   COOKIE_NAME_AUTH,
 		Value:  obfuscate,
 		MaxAge: 60 * Config.Get("general.cookie_timeout").Int(),
 		Path:   COOKIE_PATH,
-	}, req))
+	}, req), http.SameSiteLaxMode))
 	if Config.Get("features.protection.iframe").String() != "" {
 		redirectURI += "#bearer=" + obfuscate
 	}
