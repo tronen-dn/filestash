@@ -165,7 +165,7 @@ func (this SimpleAuth) EntryPoint(idpParams map[string]string, req *http.Request
 	return nil
 }
 
-func (this SimpleAuth) Callback(formData map[string]string, idpParams map[string]string, res http.ResponseWriter) (map[string]string, error) {
+func (this SimpleAuth) Callback(formData map[string]string, idpParams map[string]string, req *http.Request, res http.ResponseWriter) (map[string]string, error) {
 	users, err := getUsers()
 	if err != nil {
 		return nil, err

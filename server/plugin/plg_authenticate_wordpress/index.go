@@ -58,7 +58,7 @@ func (this Wordpress) EntryPoint(idpParams map[string]string, req *http.Request,
 	return nil
 }
 
-func (this Wordpress) Callback(formData map[string]string, idpParams map[string]string, res http.ResponseWriter) (map[string]string, error) {
+func (this Wordpress) Callback(formData map[string]string, idpParams map[string]string, req *http.Request, res http.ResponseWriter) (map[string]string, error) {
 	username := formData["user"]
 	password := formData["password"]
 	wpURL := strings.TrimRight(idpParams["url"], "/")
@@ -83,7 +83,7 @@ func (this Wordpress) Callback(formData map[string]string, idpParams map[string]
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", wpURL+"/xmlrpc.php", strings.NewReader(xmlBody))
+	req, err = http.NewRequest("POST", wpURL+"/xmlrpc.php", strings.NewReader(xmlBody))
 	if err != nil {
 		return nil, NewError("Failed to create request: "+err.Error(), 500)
 	}
